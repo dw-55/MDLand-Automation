@@ -17,8 +17,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from shared.mdland import login
 
-TEST_DATE_FROM = "06/12/2026"
-TEST_DATE_TO = "06/13/2026"
+TEST_DATE_FROM = "07/05/2026"
+TEST_DATE_TO = "07/05/2026"
 TARGET_LAB_PATTERNS = {
     "Quest": "Quest Lab Report",
     "Sherman": "Sherman Abrams Labs",
@@ -35,7 +35,7 @@ TRIGLYCERIDES_TEST_NAMES = {"TRIGLYCERIDES"}
 HEMOGLOBIN_A1C_TEST_NAMES = {"HEMOGLOBIN A1C"}
 EGFR_TEST_NAMES = {"EGFR", "E-GFR", "EGFR (CKD-EPI EQUATION)"}
 URINE_AC_TEST_NAMES = {
-    "CREATININE, RANDOM URINE",
+    "MICROALBUMIN/CREATININE RATIO",
     "ALBUMIN/CREATININE RATIO, RANDOM URINE",
     "CALC ALBUMIN/CREAT, RND",
     "ALBUM/CREAT RATIO, URINE",
@@ -48,6 +48,9 @@ VITAMIN_D_TEST_NAMES = {"VITAMIN D 25 HYDROXY", "VITAMIN D,25-OH,TOTAL,IA", "VIT
 WBC_TEST_NAMES = {"WHITE BLOOD COUNT", "WHITE BLOOD CELL COUNT", "WBC"}
 PSA_TEST_NAMES = {"TOTAL PSA", "PSA, TOTAL", "PSA", "PSA (ROCHE ECLIA)"}
 AFP_TEST_NAMES = {"AFP TUMOR MARKER", "ALPHA FETOPROTEIN, TUMOR MARKER", "AFP, TUMOR MARKER"}
+APOLIPOPROTEIN_B_TEST_NAMES = {"APOLIPOPROTEIN B"}
+URIC_ACID_TEST_NAMES = {"URIC ACID"}
+HEP_C_TEST_NAMES = {"HEPATITIS C ANTIBODY", "HEP. C AB.", "HEPATITIS C AB REFLEX HCV RNA"}
 TSH_TEST_NAMES = {
     "THYROID-STIMULATING HORMONE",
     "THYROID-STIMULATING HORMONE (TSH)",
@@ -70,7 +73,7 @@ def row_matches_test_name(test_name, test_names):
     normalized_test_name = normalize_test_label(test_name)
     for candidate in test_names:
         normalized_candidate = normalize_test_label(candidate)
-        if normalized_candidate and normalized_candidate in normalized_test_name:
+        if normalized_candidate == normalized_test_name:
             return True
     return False
 
@@ -78,12 +81,24 @@ def row_matches_test_name(test_name, test_names):
 def extract_lab_row_values(row):
     cells = row.locator("td")
     cell_count = cells.count()
-    if cell_count < 5:
+    if cell_count < 4:
         return None
 
-    test_name = cells.nth(2).inner_text().strip()
-    abn_text = cells.nth(3).inner_text().strip()
-    result_text = cells.nth(4).inner_text().strip()
+    first_cell_class = (cells.nth(0).get_attribute("class") or "").strip()
+
+    # MDLand currently uses at least two row layouts:
+    # 1. checkbox cell merged into the first td -> test/result start at 1/2/3
+    # 2. checkbox cell plus an extra code td       -> test/result start at 2/3/4
+    if "lab-test-cb-cell" in first_cell_class and cell_count >= 4:
+        test_name = cells.nth(1).inner_text().strip()
+        abn_text = cells.nth(2).inner_text().strip()
+        result_text = cells.nth(3).inner_text().strip()
+    elif cell_count >= 5:
+        test_name = cells.nth(2).inner_text().strip()
+        abn_text = cells.nth(3).inner_text().strip()
+        result_text = cells.nth(4).inner_text().strip()
+    else:
+        return None
 
     if not test_name:
         return None
@@ -396,14 +411,14 @@ def build_tsh_t4_note(review_frame):
             suffix = " (L)"
 
         if row_matches_test_name(test_name, TSH_TEST_NAMES) and tsh_note is None:
-            tsh_note = f"{result_text}{suffix}"
+            tsh_note = f"TSH {result_text}{suffix}" if suffix else "TSH NL"
             print(f"Found TSH row: test={test_name}, abn={abn_text}, result={result_text}")
         elif row_matches_test_name(test_name, T4_TEST_NAMES) and t4_note is None:
-            t4_note = f"{result_text}{suffix}"
+            t4_note = f"T4 {result_text}{suffix}" if suffix else "T4 NL"
             print(f"Found T4 row: test={test_name}, abn={abn_text}, result={result_text}")
 
         if tsh_note and t4_note:
-            return f"TSH/T4 {tsh_note} / {t4_note}"
+            return f"{tsh_note}, {t4_note}"
 
     return None
 
@@ -425,7 +440,37 @@ def build_hdl_note(review_frame):
 
 
 def build_ldl_note(review_frame):
-    return build_lab_value_note(review_frame, "LDL", LDL_TEST_NAMES)
+    rows = review_frame.locator("tr")
+    row_count = rows.count()
+    print(f"Scanning {row_count} table rows for LDL")
+
+    for i in range(row_count):
+        row = rows.nth(i)
+        row_values = extract_lab_row_values(row)
+        if row_values is None:
+            continue
+
+        test_name, abn_text, result_text = row_values
+        if not row_matches_test_name(test_name, LDL_TEST_NAMES):
+            continue
+        if not result_text:
+            continue
+
+        ldl_note = f"LDL {result_text}"
+        abn_upper = abn_text.upper()
+        if abn_upper == "H" or "ABOVE HIGH NORMAL" in abn_upper:
+            ldl_note += " (H)"
+        elif abn_upper == "L" or "ABNORMAL LOW" in abn_upper:
+            ldl_note += " (L)"
+
+        print(f"Found LDL row: test={test_name}, abn={abn_text}, result={result_text}")
+        return ldl_note
+
+    frame_text = review_frame.locator("body").inner_text()
+    if any(test_name in frame_text.upper() for test_name in LDL_TEST_NAMES):
+        print("LDL exists somewhere on the review page, but no exact LDL result row was parsed.")
+
+    return None
 
 
 def build_triglycerides_note(review_frame):
@@ -446,6 +491,46 @@ def build_urine_ac_note(review_frame):
 
 def build_afp_note(review_frame):
     return build_lab_value_note(review_frame, "AFP", AFP_TEST_NAMES)
+
+
+def build_apolipoprotein_b_note(review_frame):
+    return build_lab_value_note(review_frame, "Apolipo:", APOLIPOPROTEIN_B_TEST_NAMES)
+
+
+def build_uric_acid_note(review_frame):
+    return build_lab_value_note(review_frame, "Uric Acid:", URIC_ACID_TEST_NAMES)
+
+
+def build_hep_c_note(review_frame):
+    rows = review_frame.locator("tr")
+    row_count = rows.count()
+    print(f"Scanning {row_count} table rows for Hep C")
+
+    for i in range(row_count):
+        row = rows.nth(i)
+        row_values = extract_lab_row_values(row)
+        if row_values is None:
+            continue
+
+        test_name, abn_text, result_text = row_values
+        if not row_matches_test_name(test_name, HEP_C_TEST_NAMES):
+            continue
+        if not result_text:
+            continue
+
+        normalized_result = result_text.upper().strip()
+        print(f"Found Hep C row: test={test_name}, abn={abn_text}, result={result_text}")
+
+        if "NON-REACTIVE" in normalized_result or "NEGATIVE" in normalized_result:
+            return "Hep C: negative"
+        if "REACTIVE" in normalized_result or "POSITIVE" in normalized_result:
+            return "Hep C: positive"
+
+    frame_text = review_frame.locator("body").inner_text()
+    if any(test_name in frame_text.upper() for test_name in HEP_C_TEST_NAMES):
+        print("Hep C exists somewhere on the review page, but no matching reactive/non-reactive result row was parsed.")
+
+    return None
 
 
 def extract_date_of_service(target_lab_link):
@@ -563,6 +648,9 @@ def run():
             egfr_note = build_egfr_note(lab_report_frame)
             urine_ac_note = build_urine_ac_note(lab_report_frame)
             afp_note = build_afp_note(lab_report_frame)
+            apolipoprotein_b_note = build_apolipoprotein_b_note(lab_report_frame)
+            uric_acid_note = build_uric_acid_note(lab_report_frame)
+            hep_c_note = build_hep_c_note(lab_report_frame)
             ast_alt_note = build_ast_alt_note(lab_report_frame)
             platelet_note = build_platelet_note(lab_report_frame)
             fib4_note = build_fib4_note(lab_report_frame)
@@ -593,26 +681,35 @@ def run():
             if afp_note:
                 separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note) else ""
                 description_text = f"{description_text}{separator}{afp_note}"
-            if ast_alt_note:
+            if apolipoprotein_b_note:
                 separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note) else ""
+                description_text = f"{description_text}{separator}{apolipoprotein_b_note}"
+            if uric_acid_note:
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note) else ""
+                description_text = f"{description_text}{separator}{uric_acid_note}"
+            if hep_c_note:
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note) else ""
+                description_text = f"{description_text}{separator}{hep_c_note}"
+            if ast_alt_note:
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note or hep_c_note) else ""
                 description_text = f"{description_text}{separator}{ast_alt_note}"
             if platelet_note:
-                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or ast_alt_note) else ""
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note or hep_c_note or ast_alt_note) else ""
                 description_text = f"{description_text}{separator}{platelet_note}"
             if fib4_note:
-                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or ast_alt_note or platelet_note) else ""
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note or hep_c_note or ast_alt_note or platelet_note) else ""
                 description_text = f"{description_text}{separator}{fib4_note}"
             if vitamin_d_note:
-                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or ast_alt_note or platelet_note or fib4_note) else ""
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note or hep_c_note or ast_alt_note or platelet_note or fib4_note) else ""
                 description_text = f"{description_text}{separator}{vitamin_d_note}"
             if wbc_note:
-                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or ast_alt_note or platelet_note or fib4_note or vitamin_d_note) else ""
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note or hep_c_note or ast_alt_note or platelet_note or fib4_note or vitamin_d_note) else ""
                 description_text = f"{description_text}{separator}{wbc_note}"
             if psa_note:
-                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or ast_alt_note or platelet_note or fib4_note or vitamin_d_note or wbc_note) else ""
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note or hep_c_note or ast_alt_note or platelet_note or fib4_note or vitamin_d_note or wbc_note) else ""
                 description_text = f"{description_text}{separator}{psa_note}"
             if tsh_t4_note:
-                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or ast_alt_note or platelet_note or fib4_note or vitamin_d_note or wbc_note or psa_note) else ""
+                separator = ", " if (cholesterol_note or hdl_note or ldl_note or triglycerides_note or a1c_note or egfr_note or urine_ac_note or afp_note or apolipoprotein_b_note or uric_acid_note or hep_c_note or ast_alt_note or platelet_note or fib4_note or vitamin_d_note or wbc_note or psa_note) else ""
                 description_text = f"{description_text}{separator}{tsh_t4_note}"
             description_box = notes_frame.locator("#description")
             description_box.wait_for(state="visible")
