@@ -17,8 +17,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from shared.mdland import login
 
-TEST_DATE_FROM = "07/05/2026"
-TEST_DATE_TO = "07/05/2026"
+TEST_DATE_FROM = "05/3/2026"
+TEST_DATE_TO = "05/3/2026"
 TARGET_LAB_PATTERNS = {
     "Quest": "Quest Lab Report",
     "Sherman": "Sherman Abrams Labs",
@@ -44,13 +44,13 @@ AST_TEST_NAMES = {"ASPARTATE AMINOTRANSFERASE (AST)", "AST", "AST(SGOT)"}
 ALT_TEST_NAMES = {"ALANINE AMINOTRANSFERASE (ALT)", "ALT", "ALT(SGPT)"}
 PLATELET_TEST_NAMES = {"PLATELETS", "PLATELET COUNT"}
 FIB4_TEST_NAMES = {"FIB 4 INDEX", "FIB-4"}
-VITAMIN_D_TEST_NAMES = {"VITAMIN D 25 HYDROXY", "VITAMIN D,25-OH,TOTAL,IA", "VITAMIN D", "25OH, VITAMIN D"}
+VITAMIN_D_TEST_NAMES = {"VITAMIN D 25 HYDROXY", "VITAMIN D,25-OH,TOTAL,IA", "VITAMIN D", "25OH, VITAMIN D", "VITAMIN D, 25-OH, TOTAL"}
 WBC_TEST_NAMES = {"WHITE BLOOD COUNT", "WHITE BLOOD CELL COUNT", "WBC"}
 PSA_TEST_NAMES = {"TOTAL PSA", "PSA, TOTAL", "PSA", "PSA (ROCHE ECLIA)"}
 AFP_TEST_NAMES = {"AFP TUMOR MARKER", "ALPHA FETOPROTEIN, TUMOR MARKER", "AFP, TUMOR MARKER"}
 APOLIPOPROTEIN_B_TEST_NAMES = {"APOLIPOPROTEIN B"}
 URIC_ACID_TEST_NAMES = {"URIC ACID"}
-HEP_C_TEST_NAMES = {"HEPATITIS C ANTIBODY", "HEP. C AB.", "HEPATITIS C AB REFLEX HCV RNA"}
+HEP_C_TEST_NAMES = {"HEPATITIS C ANTIBODY", "HEP. C AB.", "HEPATITIS C AB REFLEX HCV RNA", "HEPATITIS C AB REFLEX TO HCV RNA PCR"}
 TSH_TEST_NAMES = {
     "THYROID-STIMULATING HORMONE",
     "THYROID-STIMULATING HORMONE (TSH)",
@@ -501,6 +501,15 @@ def build_uric_acid_note(review_frame):
     return build_lab_value_note(review_frame, "Uric Acid:", URIC_ACID_TEST_NAMES)
 
 
+def classify_hep_c_result(result_text):
+    normalized_result = (result_text or "").upper().strip()
+    if re.search(r"\bNON[-\s]*REACTIVE\b|\bNONREACTIVE\b", normalized_result) or "NEGATIVE" in normalized_result:
+        return "negative"
+    if re.search(r"\bREACTIVE\b", normalized_result) or "POSITIVE" in normalized_result:
+        return "positive"
+    return None
+
+
 def build_hep_c_note(review_frame):
     rows = review_frame.locator("tr")
     row_count = rows.count()
@@ -521,9 +530,10 @@ def build_hep_c_note(review_frame):
         normalized_result = result_text.upper().strip()
         print(f"Found Hep C row: test={test_name}, abn={abn_text}, result={result_text}")
 
-        if "NON-REACTIVE" in normalized_result or "NEGATIVE" in normalized_result:
+        result_classification = classify_hep_c_result(normalized_result)
+        if result_classification == "negative":
             return "Hep C: negative"
-        if "REACTIVE" in normalized_result or "POSITIVE" in normalized_result:
+        if result_classification == "positive":
             return "Hep C: positive"
 
     frame_text = review_frame.locator("body").inner_text()
