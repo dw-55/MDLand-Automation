@@ -17,8 +17,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from shared.mdland import login
 
-TEST_DATE_FROM = "05/3/2026"
-TEST_DATE_TO = "05/3/2026"
+TODAY = datetime.now().strftime("%m/%d/%Y")
+TEST_DATE_FROM = TODAY
+TEST_DATE_TO = TODAY
 TARGET_LAB_PATTERNS = {
     "Quest": "Quest Lab Report",
     "Sherman": "Sherman Abrams Labs",
