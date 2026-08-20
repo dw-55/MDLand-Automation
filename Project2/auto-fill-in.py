@@ -1,11 +1,9 @@
-import os
 import re
 import smtplib
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from datetime import datetime, timedelta
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
@@ -156,13 +154,9 @@ def apply_test_date_range(frame):
 
     from_input.wait_for(state="visible")
     to_input.wait_for(state="visible")
-    from_input.click()
-    from_input.press("Meta+A")
-    from_input.type(TEST_DATE_FROM)
+    from_input.fill(TEST_DATE_FROM)
     from_input.press("Tab")
-    to_input.click()
-    to_input.press("Meta+A")
-    to_input.type(TEST_DATE_TO)
+    to_input.fill(TEST_DATE_TO)
     to_input.press("Tab")
     print(f"Applied inbox date range: {TEST_DATE_FROM} to {TEST_DATE_TO}")
     print(f"MDLand date fields show: {from_input.input_value()} to {to_input.input_value()}")
@@ -648,7 +642,7 @@ def run():
                 )
 
             ensure_report_view(notes_frame)
-            description_text = item["date_of_service"]
+            description_text = TODAY
             if item["lab_name"] != "MainStreet":
                 description_text = f"{description_text} Lab: "
             cholesterol_note = build_cholesterol_note(lab_report_frame)
