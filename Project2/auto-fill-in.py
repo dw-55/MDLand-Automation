@@ -642,7 +642,7 @@ def run():
                 )
 
             ensure_report_view(notes_frame)
-            description_text = TODAY
+            description_text = item["date_of_service"]
             if item["lab_name"] != "MainStreet":
                 description_text = f"{description_text} Lab: "
             cholesterol_note = build_cholesterol_note(lab_report_frame)
