@@ -78,7 +78,7 @@ def row_matches_test_name(test_name, test_names):
 
 
 def extract_lab_row_values(row):
-    cells = row.locator("td")
+    cells = row.locator(":scope > td")
     cell_count = cells.count()
     if cell_count < 4:
         return None
@@ -88,7 +88,20 @@ def extract_lab_row_values(row):
     # MDLand currently uses at least two row layouts:
     # 1. checkbox cell merged into the first td -> test/result start at 1/2/3
     # 2. checkbox cell plus an extra code td       -> test/result start at 2/3/4
-    if "lab-test-cb-cell" in first_cell_class and cell_count >= 4:
+    # The checkbox class also occurs in the extra-code-cell layout.
+    # Locate the test's trend link before falling back to legacy positions.
+    trend_indices = [
+        i for i in range(cell_count)
+        if cells.nth(i).locator("a[onclick*='openTrendWindow']").count()
+    ]
+    if len(trend_indices) == 1:
+        test_index = trend_indices[0]
+        if test_index + 2 >= cell_count:
+            return None
+        test_name = cells.nth(test_index).inner_text().strip()
+        abn_text = cells.nth(test_index + 1).inner_text().strip()
+        result_text = cells.nth(test_index + 2).inner_text().strip()
+    elif "lab-test-cb-cell" in first_cell_class and cell_count >= 4:
         test_name = cells.nth(1).inner_text().strip()
         abn_text = cells.nth(2).inner_text().strip()
         result_text = cells.nth(3).inner_text().strip()
@@ -663,6 +676,22 @@ def run():
             wbc_note = build_wbc_note(lab_report_frame)
             psa_note = build_psa_note(lab_report_frame)
             tsh_t4_note = build_tsh_t4_note(lab_report_frame)
+            if not any((
+                cholesterol_note, hdl_note, ldl_note, triglycerides_note,
+                a1c_note, egfr_note, urine_ac_note, afp_note,
+                apolipoprotein_b_note, uric_acid_note, hep_c_note,
+                ast_alt_note, platelet_note, fib4_note, vitamin_d_note,
+                wbc_note, psa_note, tsh_t4_note,
+            )):
+                print(
+                    f"Skipping {item['lab_name']}: no supported lab results "
+                    "were extracted. Note left unchanged."
+                )
+                close_button = notes_frame.locator("div[onclick='closeMe();']").first
+                close_button.wait_for(state="visible")
+                close_button.click()
+                page.wait_for_timeout(1500)
+                continue
             if cholesterol_note:
                 description_text = f"{description_text}{cholesterol_note}"
             if hdl_note:
